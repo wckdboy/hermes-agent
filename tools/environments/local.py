@@ -939,6 +939,11 @@ class LocalEnvironment(BaseEnvironment):
     def _run_bash(self, cmd_string: str, *, login: bool = False, timeout: int = 120,
                   stdin_data: str | None = None) -> subprocess.Popen:
         bash = _find_bash()
+        # Fork-side ceilings on what this shell (and everything it forks) may consume. Confines
+        # consumption, not reach — the local shell stays the trusted operator shell (SECURITY.md
+        # §3.2). None on Windows or when disabled, so the spawn is byte-identical to before.
+        from tools.environments.local_limits import make_preexec
+        _preexec = make_preexec()
         # Login invocations (init_session's env snapshot) source the user's rc /
         # custom init files so nvm/asdf/pyenv land on PATH in the snapshot.
         if login:
@@ -949,7 +954,7 @@ class LocalEnvironment(BaseEnvironment):
             args, text=True, env=_make_run_env(self.env), encoding="utf-8", errors="replace",
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
-            start_new_session=True, cwd=self.cwd,
+            start_new_session=True, cwd=self.cwd, preexec_fn=_preexec,
             **({"creationflags": windows_hide_flags()} if _IS_WINDOWS else {}))
         if not _IS_WINDOWS:
             with contextlib.suppress(ProcessLookupError):
